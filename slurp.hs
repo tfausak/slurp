@@ -7,6 +7,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified Distribution.Text as Cabal
 import qualified Distribution.Types.PackageName as Cabal
 import qualified Network.HTTP.Types as Http
 import qualified Network.HTTP.Types.Status as Http
@@ -123,9 +124,10 @@ instance Aeson.FromJSON Name where
 instance Aeson.ToJSON Name where
   toJSON name = Aeson.toJSON (fromName name)
 
--- TODO: Actually parse package names.
 toName :: String -> Maybe Name
-toName string = Just (Name (Cabal.mkPackageName string))
+toName string = case Cabal.simpleParse string of
+  Nothing -> Nothing
+  Just name -> Just (Name name)
 
 fromName :: Name -> String
 fromName name = Cabal.unPackageName (unwrapName name)
