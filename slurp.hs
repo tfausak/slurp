@@ -144,11 +144,12 @@ instance Aeson.FromJSON Location where
 instance Aeson.ToJSON Location where
   toJSON location = Aeson.toJSON (fromLocation location)
 
--- TODO: Only accept HTTPS URIs.
 toLocation :: String -> Maybe Location
-toLocation string = case Uri.parseURI string of
+toLocation string = case Uri.parseAbsoluteURI string of
   Nothing -> Nothing
-  Just uri -> Just (Location uri)
+  Just uri -> case Uri.uriScheme uri of
+    "https:" -> Just (Location uri)
+    _ -> Nothing
 
 fromLocation :: Location -> String
 fromLocation location = Uri.uriToString id (unwrapLocation location) ""
