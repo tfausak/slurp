@@ -105,8 +105,11 @@ newtype Packages = Packages
   } deriving (Eq, Ord, Show)
 
 instance Aeson.FromJSON Packages where
-  parseJSON = Aeson.withObject "Packages" (\ object -> Packages
-    <$> object Aeson..: Text.pack "packages")
+  parseJSON = Aeson.withObject "Packages" (\ object -> do
+    packages <- object Aeson..: Text.pack "packages"
+    pure (Packages (Map.fromList (map
+      (\ package -> (packageName package, packageLocation package))
+      packages))))
 
 instance Aeson.ToJSON Packages where
   toJSON packages = Aeson.object
