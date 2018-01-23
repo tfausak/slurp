@@ -39,22 +39,28 @@ application packagesVar request respond = do
     ("PUT", ["packages", rawName]) ->
       case toName rawName of
         Nothing -> respond (jsonResponse Http.notFound404 [] Aeson.Null)
-        Just name -> if Map.member name (unwrapPackages packages)
-          then respond (jsonResponse Http.conflict409 [] Aeson.Null)
-          else do
-            body <- Wai.lazyRequestBody request
-            case Aeson.eitherDecode body of
-              Left message -> respond (jsonResponse
-                Http.unprocessableEntity422 [] message)
-              Right package -> if packageName package /= name
-                then respond (jsonResponse Http.badRequest400 [] Aeson.Null)
-                else do
-                  Stm.atomically (Stm.modifyTVar packagesVar
-                    ( Packages
-                    . Map.insert (packageName package) (packageLocation package)
-                    . unwrapPackages
-                    ))
-                  respond (jsonResponse Http.created201 [] Aeson.Null)
+        Just name -> do
+          body <- Wai.lazyRequestBody request
+          case Aeson.eitherDecode body of
+            Left message -> respond (jsonResponse
+              Http.unprocessableEntity422 [] message)
+            Right package -> if packageName package /= name
+              then respond (jsonResponse Http.badRequest400 [] Aeson.Null)
+              else do
+                created <- Stm.atomically (do
+                  ps <- Stm.readTVar packagesVar
+                  if Map.member name (unwrapPackages ps)
+                    then pure False
+                    else do
+                      Stm.modifyTVar packagesVar
+                        ( Packages
+                        . Map.insert name (packageLocation package)
+                        . unwrapPackages
+                        )
+                      pure True)
+                if created
+                  then respond (jsonResponse Http.created201 [] Aeson.Null)
+                  else respond (jsonResponse Http.conflict409 [] Aeson.Null)
 
     ("GET", ["packages", rawName]) ->
       case toName rawName of
