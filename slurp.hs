@@ -1,10 +1,11 @@
 module Main (main) where
 
 import qualified Control.Concurrent.STM as Stm
+import qualified Control.Exception as Exception
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as ByteString
+import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Distribution.Text as Cabal
@@ -14,13 +15,29 @@ import qualified Network.HTTP.Types.Status as Http
 import qualified Network.URI as Uri
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
+import qualified System.IO.Error as IO
 
 main :: IO ()
 main = do
-  packagesVar <- Stm.newTVarIO (Packages (Map.singleton
-    (Maybe.fromJust (toName "base"))
-    (Maybe.fromJust (toLocation "https://hackage.haskell.org/package/base"))))
-  Warp.run port (application packagesVar)
+  let file = "packages.json"
+
+  packages <- Exception.catch
+    (do
+      contents <- LazyByteString.readFile file
+      case Aeson.eitherDecode contents of
+        Left message -> fail message
+        Right packages -> pure packages)
+    (\ exception -> if IO.isDoesNotExistError exception
+      then pure (Packages Map.empty)
+      else Exception.throw exception)
+
+  packagesVar <- Stm.newTVarIO packages
+
+  Exception.finally
+    (Warp.run port (application packagesVar))
+    (do
+      newPackages <- Stm.readTVarIO packagesVar
+      LazyByteString.writeFile file (Aeson.encode newPackages))
 
 port :: Warp.Port
 port = 8080
@@ -87,6 +104,10 @@ newtype Packages = Packages
   { unwrapPackages :: Map.Map Name Location
   } deriving (Eq, Ord, Show)
 
+instance Aeson.FromJSON Packages where
+  parseJSON = Aeson.withObject "Packages" (\ object -> Packages
+    <$> object Aeson..: Text.pack "packages")
+
 instance Aeson.ToJSON Packages where
   toJSON packages = Aeson.object
     [ (Text.pack "packages"
@@ -103,13 +124,9 @@ data Package = Package
   } deriving (Eq, Ord, Show)
 
 instance Aeson.FromJSON Package where
-  parseJSON = Aeson.withObject "Package" (\ object -> do
-    name <- object Aeson..: Text.pack "name"
-    location <- object Aeson..: Text.pack "location"
-    pure Package
-      { packageName = name
-      , packageLocation = location
-      })
+  parseJSON = Aeson.withObject "Package" (\ object -> Package
+    <$> object Aeson..: Text.pack "name"
+    <*> object Aeson..: Text.pack "location")
 
 instance Aeson.ToJSON Package where
   toJSON package = Aeson.object
@@ -126,6 +143,8 @@ instance Aeson.FromJSON Name where
   parseJSON = Aeson.withText "Name" (\ text -> case toName (Text.unpack text) of
     Nothing -> fail "invalid name"
     Just name -> pure name)
+
+instance Aeson.FromJSONKey Name where
 
 instance Aeson.ToJSON Name where
   toJSON name = Aeson.toJSON (fromName name)
