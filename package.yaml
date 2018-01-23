@@ -31,7 +31,7 @@ ghc-options:
   - -Wno-unsafe
 
 executables:
-  slurp:
-    main: slurp.hs
+  slurp-server:
+    main: slurp-server.hs
   slurp-hackage:
     main: slurp-hackage.hs
